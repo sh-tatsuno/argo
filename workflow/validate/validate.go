@@ -714,6 +714,50 @@ func (ctx *templateValidationCtx) validateLeaf(scope map[string]interface{}, tmp
 	return nil
 }
 
+func (ctx *templateValidationCtx) validateOnExit(scope map[string]interface{}, tmpl *wfv1.Template, tmplCtx *templateresolution.Context) error {
+
+	if err := validateTemplateType(tmpl); err != nil {
+		return err
+	}
+
+	scope, err := validateInputs(tmpl, map[string]interface{}{})
+	if err != nil {
+		return err
+	}
+
+	localParams := make(map[string]string)
+
+	newTmpl, err := common.ProcessArgs(tmpl, &FakeArguments{}, ctx.globalParams, localParams, true)
+	if err != nil {
+		return errors.Errorf(errors.CodeBadRequest, "templates.%s %s", tmpl.Name, err)
+	}
+
+	tmplID := getTemplateID(tmpl)
+	_, ok := ctx.results[tmplID]
+	if ok {
+		// we can skip the rest since it has been validated.
+		return nil
+	}
+	ctx.results[tmplID] = true
+
+	for globalVar, val := range ctx.globalParams {
+		scope[globalVar] = val
+	}
+
+	switch newTmpl.GetType() {
+	case wfv1.TemplateTypeSteps:
+		err = ctx.validateSteps(scope, tmplCtx, newTmpl)
+	case wfv1.TemplateTypeDAG:
+		err = ctx.validateDAG(scope, tmplCtx, newTmpl)
+	default:
+		err = ctx.validateLeaf(scope, newTmpl)
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func validateArguments(prefix string, arguments wfv1.Arguments) error {
 	err := validateArgumentsFieldNames(prefix, arguments)
 	if err != nil {
@@ -807,6 +851,12 @@ func (ctx *templateValidationCtx) validateSteps(scope map[string]interface{}, tm
 			if err != nil {
 				return errors.Errorf(errors.CodeBadRequest, "templates.%s.steps[%d].%s %s", tmpl.Name, i, step.Name, err.Error())
 			}
+		}
+	}
+	if tmpl.Steps.OnExit != nil {
+		err = ctx.validateOnExit(scope, tmplCtx, tmpl)
+		if err != nil {
+			return errors.Errorf(errors.CodeBadRequest, "templates.%s.steps[%d].%s %s onExit error", tmpl.Name, i, step.Name, err.Error())
 		}
 	}
 	return nil
@@ -1250,6 +1300,12 @@ func (ctx *templateValidationCtx) validateDAG(scope map[string]interface{}, tmpl
 		_, err = ctx.validateTemplateHolder(&task, tmplCtx, &task.Arguments, scope)
 		if err != nil {
 			return errors.Errorf(errors.CodeBadRequest, "templates.%s.tasks.%s %s", tmpl.Name, task.Name, err.Error())
+		}
+	}
+	if tmpl.DAG.OnExit != nil {
+		err = ctx.validateOnExit(scope, tmplCtx, tmpl)
+		if err != nil {
+			return errors.Errorf(errors.CodeBadRequest, "templates.%s.tasks[%d].%s %s onExit error", tmpl.Name, i, task.Name, err.Error())
 		}
 	}
 
