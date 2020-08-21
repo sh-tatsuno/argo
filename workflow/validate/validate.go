@@ -714,7 +714,7 @@ func (ctx *templateValidationCtx) validateLeaf(scope map[string]interface{}, tmp
 	return nil
 }
 
-func (ctx *templateValidationCtx) validateOnExit(scope map[string]interface{}, tmpl *wfv1.Template, tmplCtx *templateresolution.Context) error {
+func (ctx *templateValidationCtx) validateOnExit(scope map[string]interface{}, tmplCtx *templateresolution.Context, tmpl *wfv1.Template) error {
 
 	if err := validateTemplateType(tmpl); err != nil {
 		return err
@@ -851,12 +851,13 @@ func (ctx *templateValidationCtx) validateSteps(scope map[string]interface{}, tm
 			if err != nil {
 				return errors.Errorf(errors.CodeBadRequest, "templates.%s.steps[%d].%s %s", tmpl.Name, i, step.Name, err.Error())
 			}
-		}
-	}
-	if tmpl.Steps.OnExit != nil {
-		err = ctx.validateOnExit(scope, tmplCtx, tmpl)
-		if err != nil {
-			return errors.Errorf(errors.CodeBadRequest, "templates.%s.steps[%d].%s %s onExit error", tmpl.Name, i, step.Name, err.Error())
+
+			if step.OnExit != "" {
+				err = ctx.validateOnExit(scope, tmplCtx, &step)
+				if err != nil {
+					return errors.Errorf(errors.CodeBadRequest, "templates.%s.steps[%d].%s %s onExit error", tmpl.Name, i, step.Name, err.Error())
+				}
+			}
 		}
 	}
 	return nil
@@ -1301,11 +1302,11 @@ func (ctx *templateValidationCtx) validateDAG(scope map[string]interface{}, tmpl
 		if err != nil {
 			return errors.Errorf(errors.CodeBadRequest, "templates.%s.tasks.%s %s", tmpl.Name, task.Name, err.Error())
 		}
-	}
-	if tmpl.DAG.OnExit != nil {
-		err = ctx.validateOnExit(scope, tmplCtx, tmpl)
-		if err != nil {
-			return errors.Errorf(errors.CodeBadRequest, "templates.%s.tasks[%d].%s %s onExit error", tmpl.Name, i, task.Name, err.Error())
+		if task.OnExit != "" {
+			err = ctx.validateOnExit(scope, tmplCtx, &task)
+			if err != nil {
+				return errors.Errorf(errors.CodeBadRequest, "templates.%s.tasks[%d].%s %s onExit error", tmpl.Name, i, task.Name, err.Error())
+			}
 		}
 	}
 
